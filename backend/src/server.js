@@ -4,10 +4,12 @@ import dotenv from "dotenv";
 
 import { connectDB } from "./config/db.js";
 import healthRoutes from "./routes/health.js";
+import authRoutes from "./routes/authRoutes.js";
 
 // Loads variables from backend/.env into process.env. Called before
 // anything else references process.env (PORT, DATABASE_URL, CLIENT_URL).
 dotenv.config();
+//console.log("JWT_SECRET:", process.env.JWT_SECRET);
 
 const app = express();
 
@@ -30,6 +32,7 @@ app.use(express.json());
 // wire together middleware + routers + startup sequencing — it stays
 // readable as more routers (auth, jobs, resumes) are added module by module.
 app.use("/health", healthRoutes);
+app.use("/api/auth", authRoutes);
 
 const PORT = process.env.PORT || 5000;
 

@@ -1,65 +1,124 @@
-import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { prisma } from "../config/prisma.js";
+import { generateToken } from "../utils/generateToken.js";
+import { logger } from "../utils/logger.js";
 
-const signToken = (id) =>
-  jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN || "7d",
-  });
+const SALT_ROUNDS = 10;
 
-// Prisma has no schema-level password hashing hooks (unlike the old Mongoose
-// pre-save hook), so hashing happens explicitly here in the controller.
-export const register = async (req, res, next) => {
+// Strips the password hash before a user object ever goes into a response.
+// Defined once here so register/login/getMe can't accidentally leak it.
+const toPublicUser = (user) => ({
+  id: user.id,
+  name: user.name,
+  email: user.email,
+  role: user.role,
+  createdAt: user.createdAt,
+});
+
+// POST /api/auth/register
+export const register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
+
     if (!name || !email || !password) {
-      return res.status(400).json({ success: false, message: "Name, email and password are required" });
+      return res.status(400).json({
+        success: false,
+        message: "Name, email and password are required",
+      });
     }
 
-    const existing = await prisma.user.findUnique({ where: { email } });
-    if (existing) {
-      return res.status(409).json({ success: false, message: "Email already registered" });
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 6 characters",
+      });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await prisma.user.create({
-      data: { name, email, password: hashedPassword },
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const existingUser = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
     });
 
-    const token = signToken(user.id);
-    res.status(201).json({
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        message: "An account with this email already exists",
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+
+    // `role` is intentionally never read from req.body — accepting a
+    // client-supplied role would let anyone register themselves as ADMIN.
+    // Every new user gets the schema's default (RECRUITER); promoting a
+    // user to ADMIN is left as a deliberate, separate operation later.
+    const user = await prisma.user.create({
+      data: {
+        name: name.trim(),
+        email: normalizedEmail,
+        password: hashedPassword,
+      },
+    });
+
+    const token = generateToken(user.id);
+
+    return res.status(201).json({
       success: true,
       token,
-      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+      user: toPublicUser(user),
     });
   } catch (err) {
-    next(err);
+    logger.error("Register failed", { error: err.message });
+    return res.status(500).json({ success: false, message: "Server error during registration" });
   }
 };
 
-export const login = async (req, res, next) => {
+// POST /api/auth/login
+export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
+
     if (!email || !password) {
-      return res.status(400).json({ success: false, message: "Email and password are required" });
+      return res.status(400).json({
+        success: false,
+        message: "Email and password are required",
+      });
     }
 
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user || !(await bcrypt.compare(password, user.password))) {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+
+    // Same generic message whether the email doesn't exist or the password
+    // is wrong — confirming "email not found" separately would let an
+    // attacker enumerate registered accounts.
+    if (!user) {
       return res.status(401).json({ success: false, message: "Invalid email or password" });
     }
 
-    const token = signToken(user.id);
-    res.json({
+    const passwordMatches = await bcrypt.compare(password, user.password);
+
+    if (!passwordMatches) {
+      return res.status(401).json({ success: false, message: "Invalid email or password" });
+    }
+
+    const token = generateToken(user.id);
+
+    return res.status(200).json({
       success: true,
       token,
-      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+      user: toPublicUser(user),
     });
   } catch (err) {
-    next(err);
+    logger.error("Login failed", { error: err.message });
+    return res.status(500).json({ success: false, message: "Server error during login" });
   }
 };
 
+// GET /api/auth/me  (protected)
+// Included so the auth middleware has a real endpoint to verify against
+// before any other module (jobs, resumes) exists to test it with.
 export const getMe = async (req, res) => {
-  res.json({ success: true, user: req.user });
+  return res.status(200).json({ success: true, user: req.user });
 };
