@@ -1,89 +1,138 @@
 import { prisma } from "../config/prisma.js";
-import { extractJobSkills } from "../services/aiScoring.js";
-import { upsertSkills } from "../services/skillService.js";
+import { logger } from "../utils/logger.js";
 
-// Shapes a Prisma Job (with nested JobSkill -> Skill rows) into the flat
-// { requiredSkills: [string] } format the frontend already expects —
-// keeps the API contract identical even though the DB is now relational.
-const formatJob = (job) => ({
-  _id: job.id,
-  title: job.title,
-  description: job.description,
-  status: job.status.toLowerCase(),
-  requiredSkills: job.requiredSkills.map((js) => js.skill.name),
-  createdAt: job.createdAt,
-  updatedAt: job.updatedAt,
-});
+const ALLOWED_STATUSES = ["OPEN", "CLOSED"];
 
-export const createJob = async (req, res, next) => {
+// POST /api/jobs
+export const createJob = async (req, res) => {
   try {
     const { title, description } = req.body;
-    if (!title || !description) {
-      return res.status(400).json({ success: false, message: "Title and description are required" });
-    }
 
-    const skillNames = await extractJobSkills(description);
-    const skills = await upsertSkills(skillNames);
+    if (!title || !title.trim()) {
+      return res.status(400).json({ success: false, message: "Title is required" });
+    }
+    if (!description || !description.trim()) {
+      return res.status(400).json({ success: false, message: "Description is required" });
+    }
 
     const job = await prisma.job.create({
       data: {
-        title,
-        description,
+        title: title.trim(),
+        description: description.trim(),
         recruiterId: req.user.id,
-        requiredSkills: {
-          create: skills.map((skill) => ({ skillId: skill.id })),
-        },
       },
-      include: { requiredSkills: { include: { skill: true } } },
     });
 
-    res.status(201).json({ success: true, job: formatJob(job) });
+    return res.status(201).json({ success: true, job });
   } catch (err) {
-    next(err);
+    logger.error("Create job failed", { error: err.message });
+    return res.status(500).json({ success: false, message: "Server error while creating job" });
   }
 };
 
-export const getJobs = async (req, res, next) => {
+// GET /api/jobs
+// Returns only jobs owned by the logged-in recruiter — never all jobs in
+// the system. req.user.id comes from the verified JWT via the auth
+// middleware, not from any client-supplied input, so it can't be spoofed.
+export const getJobs = async (req, res) => {
   try {
     const jobs = await prisma.job.findMany({
       where: { recruiterId: req.user.id },
-      include: { requiredSkills: { include: { skill: true } } },
       orderBy: { createdAt: "desc" },
     });
 
-    res.json({ success: true, jobs: jobs.map(formatJob) });
+    return res.status(200).json({ success: true, count: jobs.length, jobs });
   } catch (err) {
-    next(err);
+    logger.error("Get jobs failed", { error: err.message });
+    return res.status(500).json({ success: false, message: "Server error while fetching jobs" });
   }
 };
 
-export const getJobById = async (req, res, next) => {
-  try {
-    const job = await prisma.job.findFirst({
-      where: { id: req.params.id, recruiterId: req.user.id },
-      include: { requiredSkills: { include: { skill: true } } },
-    });
-    if (!job) return res.status(404).json({ success: false, message: "Job not found" });
-
-    res.json({ success: true, job: formatJob(job) });
-  } catch (err) {
-    next(err);
-  }
-};
-
-export const deleteJob = async (req, res, next) => {
+// GET /api/jobs/:id
+export const getJobById = async (req, res) => {
   try {
     const job = await prisma.job.findFirst({
       where: { id: req.params.id, recruiterId: req.user.id },
     });
-    if (!job) return res.status(404).json({ success: false, message: "Job not found" });
 
-    // Applications, ApplicationSkill and Score rows cascade-delete via the
-    // onDelete: Cascade relations defined in schema.prisma.
-    await prisma.job.delete({ where: { id: job.id } });
+    // findFirst (not findUnique) with recruiterId in the where clause means
+    // a job that exists but belongs to a different recruiter returns null
+    // here too — indistinguishable from "doesn't exist". That's intentional:
+    // it avoids leaking which job IDs exist to a recruiter who doesn't own them.
+    if (!job) {
+      return res.status(404).json({ success: false, message: "Job not found" });
+    }
 
-    res.json({ success: true, message: "Job deleted" });
+    return res.status(200).json({ success: true, job });
   } catch (err) {
-    next(err);
+    logger.error("Get job by id failed", { error: err.message, jobId: req.params.id });
+    return res.status(500).json({ success: false, message: "Server error while fetching job" });
+  }
+};
+
+// PATCH /api/jobs/:id
+export const updateJob = async (req, res) => {
+  try {
+    const { title, description, status } = req.body;
+
+    if (title === undefined && description === undefined && status === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: "Provide at least one field to update: title, description, or status",
+      });
+    }
+
+    if (status !== undefined && !ALLOWED_STATUSES.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Status must be one of: ${ALLOWED_STATUSES.join(", ")}`,
+      });
+    }
+
+    // Ownership is checked explicitly before the update, rather than relying
+    // on prisma.job.update's where clause alone, so a job belonging to
+    // another recruiter returns a clean 404 instead of a Prisma "record not
+    // found" error.
+    const existingJob = await prisma.job.findFirst({
+      where: { id: req.params.id, recruiterId: req.user.id },
+    });
+
+    if (!existingJob) {
+      return res.status(404).json({ success: false, message: "Job not found" });
+    }
+
+    const job = await prisma.job.update({
+      where: { id: existingJob.id },
+      data: {
+        ...(title !== undefined && { title: title.trim() }),
+        ...(description !== undefined && { description: description.trim() }),
+        ...(status !== undefined && { status }),
+      },
+    });
+
+    return res.status(200).json({ success: true, job });
+  } catch (err) {
+    logger.error("Update job failed", { error: err.message, jobId: req.params.id });
+    return res.status(500).json({ success: false, message: "Server error while updating job" });
+  }
+};
+
+// DELETE /api/jobs/:id
+export const deleteJob = async (req, res) => {
+  try {
+    const existingJob = await prisma.job.findFirst({
+      where: { id: req.params.id, recruiterId: req.user.id },
+    });
+
+    if (!existingJob) {
+      return res.status(404).json({ success: false, message: "Job not found" });
+    }
+
+    await prisma.job.delete({ where: { id: existingJob.id } });
+
+    return res.status(200).json({ success: true, message: "Job deleted successfully" });
+  } catch (err) {
+    logger.error("Delete job failed", { error: err.message, jobId: req.params.id });
+    return res.status(500).json({ success: false, message: "Server error while deleting job" });
   }
 };

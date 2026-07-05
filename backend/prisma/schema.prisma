@@ -12,12 +12,37 @@ enum Role {
   ADMIN
 }
 
+enum JobStatus {
+  OPEN
+  CLOSED
+}
+
 model User {
   id        String   @id @default(uuid())
   name      String
   email     String   @unique
   password  String
   role      Role     @default(RECRUITER)
+  jobs      Job[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Added in the Job Management module. requiredSkills/applications/scoring
+// relations are intentionally NOT here yet — they belong to the Resume and
+// AI Scoring modules and will be added when those are built, to avoid
+// introducing models (Skill, Application, Score) this module doesn't need.
+model Job {
+  id          String    @id @default(uuid())
+  recruiter   User      @relation(fields: [recruiterId], references: [id], onDelete: Cascade)
+  recruiterId String
+  title       String
+  description String
+  status      JobStatus @default(OPEN)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Speeds up "get all jobs for this recruiter" — the most common query
+  // this module performs, run on every dashboard load.
+  @@index([recruiterId])
 }
