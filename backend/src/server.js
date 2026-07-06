@@ -6,6 +6,7 @@ import { connectDB } from "./config/db.js";
 import healthRoutes from "./routes/health.js";
 import authRoutes from "./routes/authRoutes.js";
 import jobRoutes from "./routes/jobRoutes.js";
+import resumeRoutes from "./routes/resumeRoutes.js";
 
 // Loads variables from backend/.env into process.env. Called before
 // anything else references process.env (PORT, DATABASE_URL, CLIENT_URL).
@@ -34,6 +35,7 @@ app.use(express.json());
 app.use("/health", healthRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/jobs", jobRoutes);
+app.use("/api/resumes", resumeRoutes);
 
 const PORT = process.env.PORT || 5000;
 
