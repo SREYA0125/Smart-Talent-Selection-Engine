@@ -40,6 +40,7 @@ model Job {
   description String
   status      JobStatus @default(OPEN)
   resumes     Resume[]
+  analyses    Analysis[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -53,11 +54,11 @@ model Job {
 // module below. Skill/score fields still intentionally do NOT exist here —
 // those belong to the AI Scoring module.
 model Resume {
-  id           String   @id @default(uuid())
-  job          Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  id           String    @id @default(uuid())
+  job          Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
   jobId        String
   originalName String
-  storedName   String   @unique
+  storedName   String    @unique
   filePath     String
   mimeType     String
   fileSize     Int
@@ -70,9 +71,38 @@ model Resume {
   // migration. Nullable keeps this migration additive and safe.
   rawText      String?
 
-  createdAt    DateTime @default(now())
+  // One-to-one: a resume is analyzed against the one job it was uploaded
+  // for. Optional or the second analysis run for the same resume would
+  // otherwise fail on the unique constraint rather than replacing the old
+  // result — the AI Analysis controller decides which behavior it wants.
+  analysis     Analysis?
+
+  createdAt    DateTime  @default(now())
 
   // Speeds up "get all resumes for this job" — the primary read pattern
   // once uploads exist.
+  @@index([jobId])
+}
+
+// Added in the AI Resume Analysis module. One Analysis belongs to exactly
+// one Resume (1:1, enforced by @unique on resumeId) and, redundantly but
+// deliberately, to the Job that resume was uploaded against — even though
+// that job is already reachable via resume.job. Storing jobId directly here
+// means "get all analyses for this job" (needed by the future ranking
+// module) is a single indexed query, not a join through Resume every time.
+model Analysis {
+  id             String   @id @default(uuid())
+  resume         Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  resumeId       String   @unique
+  job            Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobId          String
+  overallScore   Int
+  matchingSkills String[]
+  missingSkills  String[]
+  strengths      String[]
+  weaknesses     String[]
+  summary        String
+  createdAt      DateTime @default(now())
+
   @@index([jobId])
 }

@@ -7,6 +7,7 @@ import healthRoutes from "./routes/health.js";
 import authRoutes from "./routes/authRoutes.js";
 import jobRoutes from "./routes/jobRoutes.js";
 import resumeRoutes from "./routes/resumeRoutes.js";
+import analysisRoutes from "./routes/analysisRoutes.js";
 
 // Loads variables from backend/.env into process.env. Called before
 // anything else references process.env (PORT, DATABASE_URL, CLIENT_URL).
@@ -36,6 +37,7 @@ app.use("/health", healthRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/jobs", jobRoutes);
 app.use("/api/resumes", resumeRoutes);
+app.use("/api/analysis", analysisRoutes);
 
 const PORT = process.env.PORT || 5000;
 
