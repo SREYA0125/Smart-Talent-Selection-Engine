@@ -1,26 +1,30 @@
 import fs from "fs";
 import { prisma } from "../config/prisma.js";
+import { extractTextFromResume } from "../services/resumeParser.js";
 import { logger } from "../utils/logger.js";
 
+// Excludes rawText from list responses by default — resume text can be
+// several KB per file, and nothing in this module's list view needs it.
+// The same reasoning as excluding a password hash from a user object:
+// don't return a large/sensitive field the caller didn't ask for.
+const RESUME_LIST_SELECT = {
+  id: true,
+  originalName: true,
+  storedName: true,
+  mimeType: true,
+  fileSize: true,
+  createdAt: true,
+  rawText: false,
+};
+
 // POST /api/resumes/:jobId/upload
-// Stores file metadata only. The actual text extraction (PDF/DOCX parsing)
-// happens in the Resume Parsing module — this endpoint's only job is to
-// accept files, validate them, and record where they live.
+// Upload, parse, and store extracted text — all in one request, as required.
+// Each file is handled independently: one corrupted file in a batch of ten
+// does not fail the other nine.
 export const uploadResumes = async (req, res) => {
-
-  console.log("========== DEBUG ==========");
-console.log("Headers:", req.headers["content-type"]);
-console.log("req.files:", req.files);
-console.log("req.body:", req.body);
-console.log("===========================");
-
   try {
     const { jobId } = req.params;
 
-    // Ownership check: a recruiter can only upload resumes against their
-    // own job. Multer has already written the files to disk by this point
-    // (it runs before this handler), so on a failed ownership check they're
-    // cleaned up rather than left as orphaned files with no DB record.
     const job = await prisma.job.findFirst({
       where: { id: jobId, recruiterId: req.user.id },
     });
@@ -36,9 +40,23 @@ console.log("===========================");
       return res.status(400).json({ success: false, message: "No files uploaded" });
     }
 
-    const resumes = await prisma.$transaction(
-      req.files.map((file) =>
-        prisma.resume.create({
+    const uploaded = [];
+    const failed = [];
+
+    for (const file of req.files) {
+      try {
+        // Parsing happens BEFORE the database write, and the Resume row is
+        // created in a single prisma.resume.create call that already
+        // includes rawText. This is the key design decision in this module:
+        // there is no intermediate state where a Resume row exists with
+        // rawText still empty — either parsing succeeds and a complete
+        // record is written, or it fails and nothing is written at all.
+        // A two-step "create then update with parsed text" approach would
+        // leave exactly that inconsistent half-written row if the process
+        // crashed between the two writes.
+        const rawText = await extractTextFromResume(file.path, file.mimetype);
+
+        const resume = await prisma.resume.create({
           data: {
             jobId: job.id,
             originalName: file.originalname,
@@ -46,12 +64,38 @@ console.log("===========================");
             filePath: file.path,
             mimeType: file.mimetype,
             fileSize: file.size,
+            rawText,
           },
-        })
-      )
-    );
+        });
 
-    return res.status(201).json({ success: true, count: resumes.length, resumes });
+        uploaded.push(resume);
+      } catch (err) {
+        // A file that fails to parse is not useful to keep on disk — it has
+        // no database record pointing to it and never will, so it would
+        // otherwise become an orphaned file consuming storage indefinitely.
+        logger.error("Resume parsing failed", {
+          file: file.originalname,
+          jobId: job.id,
+          error: err.message,
+        });
+        fs.unlink(file.path, () => {});
+        failed.push({ fileName: file.originalname, error: err.message });
+      }
+    }
+
+    // 201 if at least one file made it all the way through; 400 if the
+    // entire batch failed to parse. Either way, both lists are returned so
+    // the caller can see exactly what succeeded and what didn't per file —
+    // useful when uploading many resumes at once.
+    const statusCode = uploaded.length > 0 ? 201 : 400;
+
+    return res.status(statusCode).json({
+      success: uploaded.length > 0,
+      uploadedCount: uploaded.length,
+      failedCount: failed.length,
+      resumes: uploaded,
+      failed,
+    });
   } catch (err) {
     logger.error("Resume upload failed", { error: err.message, jobId: req.params.jobId });
     return res.status(500).json({ success: false, message: "Server error while uploading resumes" });
@@ -59,9 +103,6 @@ console.log("===========================");
 };
 
 // GET /api/resumes/:jobId
-// Lists uploaded resumes for a job. Included so this module can be tested
-// end-to-end (confirm what got stored) without needing the parsing or
-// scoring modules to exist yet.
 export const getResumesByJob = async (req, res) => {
   try {
     const { jobId } = req.params;
@@ -76,6 +117,7 @@ export const getResumesByJob = async (req, res) => {
 
     const resumes = await prisma.resume.findMany({
       where: { jobId: job.id },
+      select: RESUME_LIST_SELECT,
       orderBy: { createdAt: "desc" },
     });
 

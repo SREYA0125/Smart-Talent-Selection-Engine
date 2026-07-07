@@ -1,90 +1,84 @@
+import fs from "fs/promises";
 import pdfParse from "pdf-parse";
 import mammoth from "mammoth";
 
-// Common tech/skill keywords to scan for. Extend this list as needed —
-// for the MVP a keyword pass is far cheaper and more predictable than
-// asking the LLM to extract every field.
-const SKILL_KEYWORDS = [
-  "javascript", "typescript", "python", "java", "c++", "c#", "node.js", "node",
-  "react", "redux", "vue", "angular", "next.js", "express", "django", "flask",
-  "spring", "mongodb", "mysql", "postgresql", "sql", "aws", "azure", "gcp",
-  "docker", "kubernetes", "git", "html", "css", "tailwind", "graphql",
-  "rest api", "microservices", "machine learning", "deep learning",
-  "tensorflow", "pytorch", "nlp", "data analysis", "excel", "power bi",
-  "tableau", "agile", "scrum", "figma", "ci/cd", "jenkins", "linux",
-];
+const PDF_MIME = "application/pdf";
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
-const EDUCATION_KEYWORDS = [
-  "b.tech", "btech", "b.e", "bachelor", "m.tech", "mtech", "master",
-  "mba", "bca", "mca", "phd", "diploma", "b.sc", "m.sc",
-];
-
-export async function extractTextFromFile(buffer, mimetype) {
-  if (mimetype === "application/pdf") {
-    const data = await pdfParse(buffer);
-    return data.text;
+// A distinct error type for parsing failures specifically. This lets the
+// controller (or anything else calling this service later) tell "this file
+// could not be parsed" apart from an unrelated bug via a generic Error,
+// without the service needing to know anything about HTTP status codes.
+export class ResumeParsingError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "ResumeParsingError";
   }
-  if (mimetype === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
-    const result = await mammoth.extractRawText({ buffer });
-    return result.value;
+}
+
+// Why this file exists: text extraction is a distinct concern from both
+// "receiving an HTTP upload" (uploadMiddleware) and "deciding what to do
+// with the result" (resumeController). Isolating it here means:
+//  - the controller has no idea pdf-parse or mammoth exist
+//  - swapping libraries later (e.g. a better PDF parser) touches one file
+//  - this logic is trivially unit-testable in isolation, with no Express
+//    request/response objects involved
+export async function extractTextFromResume(filePath, mimeType) {
+  if (mimeType === PDF_MIME) {
+    return extractFromPdf(filePath);
   }
-  throw new Error("Unsupported file type");
-}
-
-export function extractEmail(text) {
-  const match = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-  return match ? match[0] : "";
-}
-
-export function extractPhone(text) {
-  const match = text.match(/(\+?\d{1,3}[-.\s]?)?\(?\d{3,4}\)?[-.\s]?\d{3}[-.\s]?\d{3,4}/);
-  return match ? match[0].trim() : "";
-}
-
-export function extractSkills(text) {
-  const lower = text.toLowerCase();
-  return SKILL_KEYWORDS.filter((skill) => lower.includes(skill));
-}
-
-export function extractEducation(text) {
-  const lower = text.toLowerCase();
-  return EDUCATION_KEYWORDS.filter((keyword) => lower.includes(keyword));
-}
-
-export function extractExperienceYears(text) {
-  // Looks for patterns like "3 years", "5+ years of experience"
-  const matches = [...text.matchAll(/(\d+)\+?\s*years?/gi)];
-  if (matches.length === 0) return 0;
-  const years = matches.map((m) => parseInt(m[1], 10)).filter((n) => n < 50);
-  return years.length ? Math.max(...years) : 0;
-}
-
-export function guessName(text, fileName) {
-  // Best-effort: first non-empty line that looks like a name (2-4 words, no digits/@)
-  const firstLines = text.split("\n").slice(0, 5);
-  for (const line of firstLines) {
-    const trimmed = line.trim();
-    const words = trimmed.split(/\s+/);
-    if (
-      trimmed.length > 0 &&
-      words.length >= 2 &&
-      words.length <= 4 &&
-      !/[\d@]/.test(trimmed)
-    ) {
-      return trimmed;
-    }
+  if (mimeType === DOCX_MIME) {
+    return extractFromDocx(filePath);
   }
-  return fileName.replace(/\.(pdf|docx)$/i, "");
+  // Defense in depth: uploadMiddleware's fileFilter already rejects other
+  // mime types before a file reaches disk, but the parser doesn't trust
+  // that as its only guard — a caller invoking this service directly
+  // (e.g. from a future re-parse endpoint) still gets a clear error.
+  throw new ResumeParsingError(`Unsupported file type for parsing: ${mimeType}`);
 }
 
-export function parseResume(rawText, fileName) {
-  return {
-    rawText,
-    name: guessName(rawText, fileName),
-    email: extractEmail(rawText),
-    phone: extractPhone(rawText),
-    skills: extractSkills(rawText),
-    education: extractEducation(rawText),
-    experienceYears: extractExperienceYears(rawText),
-  };
+async function extractFromPdf(filePath) {
+  let buffer;
+  try {
+    buffer = await fs.readFile(filePath);
+  } catch (err) {
+    throw new ResumeParsingError(`Could not read uploaded file: ${err.message}`);
+  }
+
+  let result;
+  try {
+    result = await pdfParse(buffer);
+  } catch (err) {
+    // pdf-parse throws on malformed/corrupted PDFs (bad header, broken
+    // xref table, encrypted content it can't handle, etc.) — surfaced as
+    // a parsing error rather than a 500, since the file itself is at fault.
+    throw new ResumeParsingError(`Corrupted or unreadable PDF: ${err.message}`);
+  }
+
+  const text = (result.text || "").trim();
+  if (!text) {
+    // A PDF that "parses" successfully but yields no text is usually a
+    // scanned image with no OCR layer. That's a real, expected failure
+    // mode for this MVP (no OCR support), not a bug — treated the same
+    // way as any other parsing failure.
+    throw new ResumeParsingError("PDF parsed but contained no extractable text (possibly a scanned image)");
+  }
+
+  return text;
+}
+
+async function extractFromDocx(filePath) {
+  let result;
+  try {
+    result = await mammoth.extractRawText({ path: filePath });
+  } catch (err) {
+    throw new ResumeParsingError(`Corrupted or unreadable DOCX: ${err.message}`);
+  }
+
+  const text = (result.value || "").trim();
+  if (!text) {
+    throw new ResumeParsingError("DOCX parsed but contained no extractable text");
+  }
+
+  return text;
 }

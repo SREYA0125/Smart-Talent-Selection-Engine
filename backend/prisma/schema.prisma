@@ -28,7 +28,10 @@ model User {
   updatedAt DateTime @updatedAt
 }
 
-
+// Added in the Job Management module. requiredSkills/applications/scoring
+// relations are intentionally NOT here yet — they belong to the Resume and
+// AI Scoring modules and will be added when those are built, to avoid
+// introducing models (Skill, Application, Score) this module doesn't need.
 model Job {
   id          String    @id @default(uuid())
   recruiter   User      @relation(fields: [recruiterId], references: [id], onDelete: Cascade)
@@ -45,7 +48,10 @@ model Job {
   @@index([recruiterId])
 }
 
-
+// Added in the Resume Upload module. Stores only file metadata + where the
+// physical file lives on disk. `rawText` was added in the Resume Parsing
+// module below. Skill/score fields still intentionally do NOT exist here —
+// those belong to the AI Scoring module.
 model Resume {
   id           String   @id @default(uuid())
   job          Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
@@ -55,6 +61,15 @@ model Resume {
   filePath     String
   mimeType     String
   fileSize     Int
+
+  // Added in the Resume Parsing module. Nullable rather than required —
+  // not because the app should ever create a Resume without text (the
+  // controller only inserts a row after parsing succeeds, in one write),
+  // but because making it required on a table that may already have rows
+  // from the earlier Upload-only module would force a destructive
+  // migration. Nullable keeps this migration additive and safe.
+  rawText      String?
+
   createdAt    DateTime @default(now())
 
   // Speeds up "get all resumes for this job" — the primary read pattern
