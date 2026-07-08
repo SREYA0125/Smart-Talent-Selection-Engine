@@ -1,11 +1,23 @@
-// Placeholder only, as required for this module — it renders its children
-// unconditionally right now. The reason this file exists already, doing
-// nothing yet, is so every route that will eventually need protection
-// (Dashboard, Jobs, Resumes, Analysis, Ranking — see App.jsx) is already
-// wrapped in <ProtectedRoute> today. When the Authentication module is
-// built, the real redirect-if-not-logged-in check gets added inside this
-// one file, and every route wrapped in it becomes protected instantly —
-// no route definitions need to change.
+import { Navigate } from "react-router-dom";
+import { useAuth } from "../hooks/useAuth.js";
+import Loader from "./common/Loader.jsx";
+
 export default function ProtectedRoute({ children }) {
+  const { isAuthenticated, loading } = useAuth();
+
+  // While AuthContext is still restoring session state from a stored token
+  // (the GET /auth/me call that runs on mount), render a loader instead of
+  // deciding anything yet. Without this check, a logged-in user refreshing
+  // the page would see an incorrect flash-redirect to /login for a moment,
+  // because isAuthenticated is still false at that instant — not because
+  // they're logged out, but because the check hasn't finished running.
+  if (loading) {
+    return <Loader label="Checking your session..." />;
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
   return children;
 }
