@@ -4,7 +4,7 @@ import ProtectedRoute from "./components/ProtectedRoute.jsx";
 
 import Login from "./pages/auth/Login.jsx";
 import Register from "./pages/auth/Register.jsx";
-import Dashboard from "./pages/Dashboard.jsx";
+import Dashboard from "./pages/dashboard/Dashboard.jsx";
 import Jobs from "./pages/jobs/Jobs.jsx";
 import Resumes from "./pages/resumes/Resumes.jsx";
 import Analysis from "./pages/analysis/Analysis.jsx";
