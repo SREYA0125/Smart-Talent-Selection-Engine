@@ -1,4 +1,6 @@
 import ResumeCard from "./ResumeCard";
+import EmptyState from "../common/EmptyState";
+import { FileText } from "lucide-react";
 
 /*
 |--------------------------------------------------------------------------
@@ -15,15 +17,11 @@ export default function ResumeList({ resumes = [] }) {
   // Empty State
   if (resumes.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-gray-300 bg-white p-10 text-center">
-        <h2 className="text-xl font-semibold text-gray-700">
-          No resumes uploaded yet
-        </h2>
-
-        <p className="mt-2 text-gray-500">
-          Upload PDF or DOCX resumes to begin candidate analysis.
-        </p>
-      </div>
+      <EmptyState
+        icon={FileText}
+        title="No resumes uploaded yet"
+        description="Upload PDF or DOCX resumes to begin candidate analysis."
+      />
     );
   }
 

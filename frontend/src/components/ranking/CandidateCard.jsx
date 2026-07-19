@@ -1,7 +1,8 @@
+import React from "react";
 import RankBadge from "./RankBadge";
 import ScoreBadge from "../analysis/ScoreBadge";
 
-export default function CandidateCard({ candidate }) {
+function CandidateCard({ candidate }) {
   return (
     <div className="rounded-xl border bg-white p-6 shadow-sm hover:shadow-md transition">
 
@@ -90,3 +91,5 @@ export default function CandidateCard({ candidate }) {
     </div>
   );
 }
+
+export default React.memo(CandidateCard);

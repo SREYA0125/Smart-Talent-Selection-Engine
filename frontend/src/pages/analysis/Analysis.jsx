@@ -5,6 +5,7 @@ import Loader from "../../components/common/Loader";
 
 import AnalysisLoader from "../../components/analysis/AnalysisLoader";
 import AnalysisCard from "../../components/analysis/AnalysisCard";
+import { useToast } from "../../contexts/ToastContext.jsx";
 
 import {
   getRecruiterJobs,
@@ -27,6 +28,7 @@ import {
 */
 
 export default function Analysis() {
+  const { showToast } = useToast();
 
   // -------------------------
   // Data
@@ -176,27 +178,17 @@ export default function Analysis() {
 
       // Store the newly created analysis
       setAnalysis(data.analysis);
-
+      showToast("AI analysis completed successfully!", "success");
     } catch (err) {
       console.error(err);
-
-      setError(
-        err.response?.data?.message ||
-        "Failed to analyze resume."
-      );
+      const errMsg = err.response?.data?.message || "Failed to analyze resume.";
+      setError(errMsg);
+      showToast(errMsg, "error");
     } finally {
       setAnalyzing(false);
     }
   };
 
-
-    // -------------------------
-  // Loading
-  // -------------------------
-
-  if (loadingJobs) {
-    return <Loader label="Loading jobs..." />;
-  }
 
   return (
     <div className="space-y-8">
@@ -224,20 +216,24 @@ export default function Analysis() {
           Select Job
         </label>
 
-        <select
-          value={selectedJobId}
-          onChange={(e) => setSelectedJobId(e.target.value)}
-          className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-accent"
-        >
-          {jobs.map((job) => (
-            <option
-              key={job.id}
-              value={job.id}
-            >
-              {job.title}
-            </option>
-          ))}
-        </select>
+        {loadingJobs ? (
+          <Loader label="Loading jobs list..." />
+        ) : (
+          <select
+            value={selectedJobId}
+            onChange={(e) => setSelectedJobId(e.target.value)}
+            className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-accent"
+          >
+            {jobs.map((job) => (
+              <option
+                key={job.id}
+                value={job.id}
+              >
+                {job.title}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       {/* Resume List */}

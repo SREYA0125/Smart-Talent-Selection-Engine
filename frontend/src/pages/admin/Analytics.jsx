@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { TrendingUp, Award, BarChart3, PieChart, Users, Briefcase, FileText } from "lucide-react";
 import Loader from "../../components/common/Loader.jsx";
+import { ChartSkeleton } from "../../components/common/Skeletons.jsx";
+import ErrorState from "../../components/common/ErrorState.jsx";
 import { getAdminAnalytics } from "../../services/adminService.js";
 
 /*
@@ -37,24 +39,11 @@ export default function Analytics() {
     fetchAnalytics();
   }, []);
 
-  if (loading) {
-    return <Loader label="Loading platform analytics..." />;
-  }
-
-  if (error) {
-    return (
-      <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">
-        {error}
-      </div>
-    );
-  }
-
   const hiringTrends = data?.hiringTrends || [];
   const scoreDistribution = data?.scoreDistribution || [];
   const topRecruiters = data?.topRecruiters || [];
   const analysisCounts = data?.analysisCounts || { totalResumes: 0, analyzedResumes: 0, unanalyzedResumes: 0 };
 
-  // Calculate stats for charts
   const maxTrendVal = Math.max(
     ...hiringTrends.map((t) => Math.max(t.jobs, t.resumes)),
     1
@@ -62,13 +51,11 @@ export default function Analytics() {
 
   const maxScoreCount = Math.max(...scoreDistribution.map((d) => d.count), 1);
 
-  // Donut chart calculations
   const totalResumes = analysisCounts.totalResumes || 0;
   const analyzedResumes = analysisCounts.analyzedResumes || 0;
   const analyzedPercent = totalResumes > 0 ? Math.round((analyzedResumes / totalResumes) * 100) : 0;
   const unanalyzedPercent = 100 - analyzedPercent;
 
-  // Donut stroke configuration
   const radius = 50;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (analyzedPercent / 100) * circumference;
@@ -83,7 +70,22 @@ export default function Analytics() {
         </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      {error ? (
+        <ErrorState
+          title="Unable to load analytics stats"
+          message={error}
+          onRetry={fetchAnalytics}
+        />
+      ) : loading ? (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <ChartSkeleton />
+          <ChartSkeleton />
+          <ChartSkeleton />
+          <ChartSkeleton />
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-6 lg:grid-cols-2">
         {/* Chart 1: Hiring Trends */}
         <div className="rounded-xl border bg-white p-6 shadow-sm flex flex-col justify-between h-[380px]">
           <div>
@@ -297,6 +299,8 @@ export default function Analytics() {
           )}
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }

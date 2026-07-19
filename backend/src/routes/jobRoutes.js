@@ -8,6 +8,7 @@ import {
   getJobById,
   updateJob,
   deleteJob,
+  getJobReport,
 } from "../controllers/jobController.js";
 import { protect } from "../middleware/authMiddleware.js";
 
@@ -27,5 +28,7 @@ router.post("/", authorize(ROLES.RECRUITER), createJob);
 router.patch("/:id", authorize(ROLES.RECRUITER), updateJob);
 
 router.delete("/:id", authorize(ROLES.RECRUITER), deleteJob);
+
+router.get("/:id/report", authorize(ROLES.RECRUITER, ROLES.ADMIN), getJobReport);
 
 export default router;

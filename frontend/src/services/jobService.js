@@ -15,8 +15,8 @@ import api from "./api";
  * GET /api/jobs
  * Fetch all jobs belonging to the authenticated recruiter.
  */
-export const getJobs = async () => {
-  const response = await api.get("/jobs");
+export const getJobs = async (params = {}) => {
+  const response = await api.get("/jobs", { params });
   return response.data;
 };
 
@@ -53,5 +53,10 @@ export const updateJob = async (jobId, jobData) => {
  */
 export const deleteJob = async (jobId) => {
   const response = await api.delete(`/jobs/${jobId}`);
+  return response.data;
+};
+
+export const exportJobReport = async (jobId) => {
+  const response = await api.get(`/jobs/${jobId}/report`);
   return response.data;
 };

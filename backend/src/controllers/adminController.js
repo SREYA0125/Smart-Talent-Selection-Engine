@@ -77,28 +77,63 @@ export const getDashboardStats = async (req, res) => {
 // GET /api/admin/recruiters
 export const getRecruiters = async (req, res) => {
   try {
-    const recruiters = await prisma.user.findMany({
-      where: { role: "RECRUITER" },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        createdAt: true,
-        jobs: {
-          select: {
-            id: true,
-            _count: {
-              select: {
-                resumes: true,
-                analyses: true,
-              },
+    const { search, page, limit } = req.query;
+
+    const where = { role: "RECRUITER" };
+
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { email: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    const totalItems = await prisma.user.count({ where });
+
+    let recruiters;
+    let pageNum = null;
+    let limitNum = null;
+    let totalPages = null;
+
+    const selectOptions = {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      createdAt: true,
+      jobs: {
+        select: {
+          id: true,
+          _count: {
+            select: {
+              resumes: true,
+              analyses: true,
             },
           },
         },
       },
-      orderBy: { createdAt: "desc" },
-    });
+    };
+
+    if (page || limit) {
+      pageNum = parseInt(page, 10) || 1;
+      limitNum = parseInt(limit, 10) || 10;
+      const skip = (pageNum - 1) * limitNum;
+
+      recruiters = await prisma.user.findMany({
+        where,
+        select: selectOptions,
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limitNum,
+      });
+      totalPages = Math.ceil(totalItems / limitNum);
+    } else {
+      recruiters = await prisma.user.findMany({
+        where,
+        select: selectOptions,
+        orderBy: { createdAt: "desc" },
+      });
+    }
 
     const formattedRecruiters = recruiters.map((recruiter) => {
       const totalJobs = recruiter.jobs.length;
@@ -128,6 +163,10 @@ export const getRecruiters = async (req, res) => {
       success: true,
       count: formattedRecruiters.length,
       recruiters: formattedRecruiters,
+      items: formattedRecruiters,
+      totalItems,
+      currentPage: pageNum,
+      totalPages: totalPages,
     });
   } catch (err) {
     logger.error("Admin get recruiters failed", { error: err.message });
@@ -476,5 +515,118 @@ export const getPlatformAnalytics = async (req, res) => {
   } catch (err) {
     logger.error("Admin platform analytics failed", { error: err.message });
     return res.status(500).json({ success: false, message: "Server error while fetching platform analytics" });
+  }
+};
+
+// GET /api/admin/recruiters/export
+export const exportRecruiters = async (req, res) => {
+  try {
+    const { search, format } = req.query;
+
+    const where = {
+      role: "RECRUITER",
+    };
+
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { email: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    const recruiters = await prisma.user.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }],
+      include: {
+        jobs: {
+          select: {
+            createdAt: true,
+            resumes: {
+              select: {
+                id: true,
+                analyses: {
+                  select: { overallScore: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const formattedRecruiters = recruiters.map((recruiter) => {
+      let totalJobs = recruiter.jobs.length;
+      let totalResumes = 0;
+      let totalScoreSum = 0;
+      let totalAnalyses = 0;
+
+      let lastActive = recruiter.updatedAt;
+
+      recruiter.jobs.forEach((job) => {
+        if (job.createdAt > lastActive) {
+          lastActive = job.createdAt;
+        }
+
+        totalResumes += job.resumes.length;
+        job.resumes.forEach((resume) => {
+          if (resume.analyses && resume.analyses.length > 0) {
+            totalAnalyses += resume.analyses.length;
+            resume.analyses.forEach((analysis) => {
+              totalScoreSum += analysis.overallScore;
+            });
+          }
+        });
+      });
+
+      const averageScore = totalAnalyses > 0 ? Math.round(totalScoreSum / totalAnalyses) : 0;
+
+      return {
+        id: recruiter.id,
+        name: recruiter.name,
+        email: recruiter.email,
+        jobsPosted: totalJobs,
+        resumesProcessed: totalResumes,
+        averageCandidateScore: averageScore,
+        lastActiveDate: lastActive,
+      };
+    });
+
+    if (format === "csv") {
+      let csvContent = "\uFEFF"; // UTF-8 BOM
+      csvContent += "Rank,Recruiter Name,Email,Jobs Posted,Resumes Processed,Average Candidate Score,Last Active Date\n";
+
+      const escapeCsv = (val) => {
+        if (val === undefined || val === null) return "";
+        let str = typeof val === "string" ? val : String(val);
+        str = str.replace(/"/g, '""');
+        if (str.includes(",") || str.includes('"') || str.includes("\n") || str.includes("\r")) {
+          str = `"${str}"`;
+        }
+        return str;
+      };
+
+      formattedRecruiters.forEach((row, idx) => {
+        csvContent += `${idx + 1},`;
+        csvContent += `${escapeCsv(row.name)},`;
+        csvContent += `${escapeCsv(row.email)},`;
+        csvContent += `${row.jobsPosted},`;
+        csvContent += `${row.resumesProcessed},`;
+        csvContent += `${row.averageCandidateScore},`;
+        csvContent += `${escapeCsv(new Date(row.lastActiveDate).toLocaleDateString())}\n`;
+      });
+
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", 'attachment; filename="recruiter_activity_report.csv"');
+      return res.status(200).send(csvContent);
+    }
+
+    // Default JSON response for print PDF rendering
+    return res.status(200).json({
+      success: true,
+      recruiters: formattedRecruiters,
+    });
+  } catch (err) {
+    logger.error("Admin export recruiters failed", { error: err.message });
+    return res.status(500).json({ success: false, message: "Server error while exporting recruiters" });
   }
 };

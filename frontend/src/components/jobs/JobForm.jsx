@@ -85,31 +85,23 @@ export default function JobForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form onSubmit={handleSubmit} className="space-y-5" noValidate>
       {/* Job Title */}
-      <div>
-        <label className="mb-2 block text-sm font-medium text-gray-700">
-          Job Title
-        </label>
-
-        <Input
-          name="title"
-          value={formData.title}
-          onChange={handleChange}
-          placeholder="Backend Developer"
-        />
-
-        {errors.title && (
-          <p className="mt-1 text-sm text-red-500">
-            {errors.title}
-          </p>
-        )}
-      </div>
+      <Input
+        label="Job Title"
+        name="title"
+        value={formData.title}
+        onChange={handleChange}
+        placeholder="Backend Developer"
+        required
+        error={errors.title}
+      />
 
       {/* Description */}
       <div>
-        <label className="mb-2 block text-sm font-medium text-gray-700">
+        <label className="mb-1 block text-sm font-medium text-ink flex items-center">
           Job Description
+          <span className="text-red-500 ml-1" aria-hidden="true">*</span>
         </label>
 
         <textarea
@@ -118,11 +110,15 @@ export default function JobForm({
           value={formData.description}
           onChange={handleChange}
           placeholder="Describe the role..."
-          className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+          className={`w-full rounded-md border px-3 py-2 text-sm outline-none transition focus:ring-2 ${
+            errors.description
+              ? "border-red-500 focus:ring-red-500 focus:border-red-500"
+              : "border-gray-300 focus:ring-accent focus:border-accent"
+          }`}
         />
 
         {errors.description && (
-          <p className="mt-1 text-sm text-red-500">
+          <p className="text-xs text-red-600 font-medium mt-0.5 animate-slide-in">
             {errors.description}
           </p>
         )}
@@ -134,19 +130,16 @@ export default function JobForm({
           type="button"
           variant="secondary"
           onClick={onCancel}
+          disabled={submitting}
         >
           Cancel
         </Button>
 
         <Button
           type="submit"
-          disabled={submitting}
+          loading={submitting}
         >
-          {submitting
-            ? "Saving..."
-            : initialData
-            ? "Update Job"
-            : "Create Job"}
+          {initialData ? "Update Job" : "Create Job"}
         </Button>
       </div>
     </form>

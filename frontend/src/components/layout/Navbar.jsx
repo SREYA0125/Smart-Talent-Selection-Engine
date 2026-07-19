@@ -1,9 +1,11 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth.js";
+import { useToast } from "../../contexts/ToastContext.jsx";
 
 export default function Navbar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const { showToast } = useToast();
 
   // logout() only clears state (context + localStorage) — it doesn't know
   // about routing. Navigation is triggered here, in the component that
@@ -11,6 +13,7 @@ export default function Navbar() {
   // navigation concerns it shouldn't need to care about.
   const handleLogout = () => {
     logout();
+    showToast("Logout successful!", "success");
     navigate("/login");
   };
 

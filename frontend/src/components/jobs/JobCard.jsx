@@ -1,4 +1,5 @@
-import { Eye, Pencil, Trash2, CalendarDays } from "lucide-react";
+import React from "react";
+import { Eye, Pencil, Trash2, CalendarDays, FileText } from "lucide-react";
 import Card from "../common/Card";
 
 /*
@@ -13,11 +14,12 @@ import Card from "../common/Card";
 |--------------------------------------------------------------------------
 */
 
-export default function JobCard({
+function JobCard({
   job,
   onView,
   onEdit,
   onDelete,
+  onExportReport,
 }) {
   return (
     <Card className="mb-5 rounded-xl border border-gray-200 bg-white shadow-sm transition hover:shadow-md">
@@ -59,6 +61,14 @@ export default function JobCard({
         {/* Action Buttons */}
         <div className="flex gap-2">
           <button
+            onClick={() => onExportReport && onExportReport(job)}
+            className="flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-3 py-2 text-sm font-medium text-purple-700 transition hover:bg-purple-100"
+          >
+            <FileText size={16} />
+            Report
+          </button>
+
+          <button
             onClick={() => onView(job)}
             className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-100"
           >
@@ -86,3 +96,5 @@ export default function JobCard({
     </Card>
   );
 }
+
+export default React.memo(JobCard);

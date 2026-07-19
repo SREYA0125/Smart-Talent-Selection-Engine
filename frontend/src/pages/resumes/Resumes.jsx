@@ -6,6 +6,9 @@ import Loader from "../../components/common/Loader";
 import UploadDropzone from "../../components/resume/UploadDropzone";
 import UploadProgress from "../../components/resume/UploadProgress";
 import ResumeList from "../../components/resume/ResumeList";
+import { useToast } from "../../contexts/ToastContext.jsx";
+import EmptyState from "../../components/common/EmptyState.jsx";
+import { FileText } from "lucide-react";
 
 import {
   getRecruiterJobs,
@@ -28,6 +31,7 @@ import {
 */
 
 export default function Resumes() {
+  const { showToast } = useToast();
 
   // -------------------------
   // Data
@@ -140,11 +144,13 @@ export default function Resumes() {
   const handleUpload = async () => {
     if (!selectedJobId) {
       setError("Please select a job first.");
+      showToast("Please select a job first.", "warning");
       return;
     }
 
     if (files.length === 0) {
       setError("Please select at least one resume.");
+      showToast("Please select at least one resume.", "warning");
       return;
     }
 
@@ -171,6 +177,8 @@ export default function Resumes() {
         setResumes((prev) => [...data.resumes, ...prev]);
       }
 
+      showToast("Resumes uploaded successfully!", "success");
+
       // Clear selected files
       setFiles([]);
 
@@ -181,24 +189,14 @@ export default function Resumes() {
 
     } catch (err) {
       console.error(err);
-
-      setError(
-        err.response?.data?.message ||
-          "Failed to upload resumes."
-      );
+      const errMsg = err.response?.data?.message || "Failed to upload resumes.";
+      setError(errMsg);
+      showToast(errMsg, "error");
     } finally {
       setUploading(false);
     }
   };
 
-
-    // -------------------------
-  // Loading
-  // -------------------------
-
-  if (loadingJobs) {
-    return <Loader label="Loading jobs..." />;
-  }
 
   return (
     <div className="space-y-8">
@@ -226,19 +224,22 @@ export default function Resumes() {
           Select Job
         </label>
 
-        <select
-          value={selectedJobId}
-          onChange={(e) => setSelectedJobId(e.target.value)}
-          className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-accent"
-        >
-          {jobs.map((job) => (
-            <option key={job.id} value={job.id}>
-              {job.title}
-            </option>
-          ))}
-        </select>
+        {loadingJobs ? (
+          <Loader label="Loading jobs list..." />
+        ) : (
+          <select
+            value={selectedJobId}
+            onChange={(e) => setSelectedJobId(e.target.value)}
+            className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-accent"
+          >
+            {jobs.map((job) => (
+              <option key={job.id} value={job.id}>
+                {job.title}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
-
       {/* Upload Area */}
       <UploadDropzone
         files={files}

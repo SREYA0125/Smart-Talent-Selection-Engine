@@ -31,17 +31,88 @@ export const createJob = async (req, res) => {
 };
 
 // GET /api/jobs
-// Returns only jobs owned by the logged-in recruiter — never all jobs in
-// the system. req.user.id comes from the verified JWT via the auth
-// middleware, not from any client-supplied input, so it can't be spoofed.
+// Returns jobs owned by the logged-in recruiter.
+// Supports query parameters: search, status, sort, page, limit.
 export const getJobs = async (req, res) => {
   try {
-    const jobs = await prisma.job.findMany({
-      where: { recruiterId: req.user.id },
-      orderBy: { createdAt: "desc" },
-    });
+    const { search, status, sort, page, limit } = req.query;
 
-    return res.status(200).json({ success: true, count: jobs.length, jobs });
+    const where = { recruiterId: req.user.id };
+
+    if (status && ["OPEN", "CLOSED"].includes(status)) {
+      where.status = status;
+    }
+
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    // Sort mapping
+    let orderBy = { createdAt: "desc" };
+    if (sort === "oldest") {
+      orderBy = { createdAt: "asc" };
+    } else if (sort === "alphabetical") {
+      orderBy = { title: "asc" };
+    }
+
+    const totalItems = await prisma.job.count({ where });
+
+    let jobs;
+    let pageNum = null;
+    let limitNum = null;
+    let totalPages = null;
+
+    if (page || limit) {
+      pageNum = parseInt(page, 10) || 1;
+      limitNum = parseInt(limit, 10) || 10;
+      const skip = (pageNum - 1) * limitNum;
+      
+      jobs = await prisma.job.findMany({
+        where,
+        orderBy,
+        skip,
+        take: limitNum,
+        include: {
+          _count: {
+            select: {
+              resumes: true,
+            },
+          },
+        },
+      });
+      totalPages = Math.ceil(totalItems / limitNum);
+    } else {
+      jobs = await prisma.job.findMany({
+        where,
+        orderBy,
+        include: {
+          _count: {
+            select: {
+              resumes: true,
+            },
+          },
+        },
+      });
+    }
+
+    // Format the response keeping both 'jobs' and 'items' for compatibility
+    const formattedJobs = jobs.map((job) => ({
+      ...job,
+      resumeCount: job._count?.resumes ?? 0,
+    }));
+
+    return res.status(200).json({
+      success: true,
+      count: formattedJobs.length,
+      jobs: formattedJobs,
+      items: formattedJobs,
+      totalItems,
+      currentPage: pageNum,
+      totalPages: totalPages,
+    });
   } catch (err) {
     logger.error("Get jobs failed", { error: err.message });
     return res.status(500).json({ success: false, message: "Server error while fetching jobs" });
@@ -134,5 +205,68 @@ export const deleteJob = async (req, res) => {
   } catch (err) {
     logger.error("Delete job failed", { error: err.message, jobId: req.params.id });
     return res.status(500).json({ success: false, message: "Server error while deleting job" });
+  }
+};
+
+// GET /api/jobs/:id/report
+export const getJobReport = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const jobQuery = { id };
+    if (req.user.role !== "ADMIN") {
+      jobQuery.recruiterId = req.user.id;
+    }
+
+    const job = await prisma.job.findFirst({
+      where: jobQuery,
+    });
+
+    if (!job) {
+      return res.status(404).json({ success: false, message: "Job not found" });
+    }
+
+    // Aggregate analysis scores
+    const stats = await prisma.analysis.aggregate({
+      where: { jobId: job.id },
+      _count: { id: true },
+      _avg: { overallScore: true },
+      _max: { overallScore: true },
+      _min: { overallScore: true },
+    });
+
+    const totalApplicants = stats._count.id || 0;
+    const averageScore = stats._avg.overallScore ? Math.round(stats._avg.overallScore) : 0;
+    const highestScore = stats._max.overallScore || 0;
+    const lowestScore = stats._min.overallScore || 0;
+
+    const excellentCandidates = await prisma.analysis.count({
+      where: { jobId: job.id, overallScore: { gte: 90 } },
+    });
+
+    const goodCandidates = await prisma.analysis.count({
+      where: { jobId: job.id, overallScore: { gte: 80, lte: 89 } },
+    });
+
+    const averageCandidates = await prisma.analysis.count({
+      where: { jobId: job.id, overallScore: { gte: 70, lte: 79 } },
+    });
+
+    return res.status(200).json({
+      success: true,
+      report: {
+        jobTitle: job.title,
+        totalApplicants,
+        averageMatchScore: averageScore,
+        highestMatchScore: highestScore,
+        lowestMatchScore: lowestScore,
+        excellentCandidates,
+        goodCandidates,
+        averageCandidates,
+      },
+    });
+  } catch (err) {
+    logger.error("Get job report failed", { error: err.message, jobId: req.params.id });
+    return res.status(500).json({ success: false, message: "Server error while generating job report" });
   }
 };

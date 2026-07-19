@@ -18,8 +18,8 @@ export const getAdminAnalytics = async () => {
   return response.data;
 };
 
-export const getRecruiters = async () => {
-  const response = await api.get("/admin/recruiters");
+export const getRecruiters = async (params = {}) => {
+  const response = await api.get("/admin/recruiters", { params });
   return response.data;
 };
 
@@ -40,5 +40,17 @@ export const deleteRecruiter = async (id) => {
 
 export const getPlatformJobs = async () => {
   const response = await api.get("/admin/jobs");
+  return response.data;
+};
+
+export const exportRecruiters = async (params = {}) => {
+  if (params.format === "csv") {
+    const response = await api.get("/admin/recruiters/export", {
+      params,
+      responseType: "blob",
+    });
+    return response.data;
+  }
+  const response = await api.get("/admin/recruiters/export", { params });
   return response.data;
 };

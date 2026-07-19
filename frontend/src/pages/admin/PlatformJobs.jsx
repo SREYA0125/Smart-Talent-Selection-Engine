@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { Briefcase, Calendar, FileText, Brain } from "lucide-react";
 import Loader from "../../components/common/Loader.jsx";
+import { TableSkeleton } from "../../components/common/Skeletons.jsx";
+import EmptyState from "../../components/common/EmptyState.jsx";
+import ErrorState from "../../components/common/ErrorState.jsx";
 import { getPlatformJobs } from "../../services/adminService.js";
 
 /*
@@ -36,10 +39,6 @@ export default function PlatformJobs() {
     fetchJobs();
   }, []);
 
-  if (loading) {
-    return <Loader label="Loading platform jobs..." />;
-  }
-
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -51,16 +50,27 @@ export default function PlatformJobs() {
       </div>
 
       {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">
-          {error}
-        </div>
+        <ErrorState
+          title="Unable to load platform jobs"
+          message={error}
+          onRetry={fetchJobs}
+        />
       )}
 
       {/* Jobs Table */}
       {!error && (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-          <table className="w-full border-collapse text-left text-sm text-gray-500">
-            <thead className="bg-gray-50 text-xs font-semibold uppercase tracking-wider text-gray-700">
+          {loading ? (
+            <TableSkeleton rows={5} />
+          ) : jobs.length === 0 ? (
+            <EmptyState
+              icon={Briefcase}
+              title="No jobs found on platform"
+              description="There are no active or inactive job postings created by recruiters yet."
+            />
+          ) : (
+            <table className="w-full border-collapse text-left text-sm text-gray-500">
+              <thead className="bg-gray-50 text-xs font-semibold uppercase tracking-wider text-gray-700">
               <tr>
                 <th className="px-6 py-4">Job Title</th>
                 <th className="px-6 py-4">Recruiter</th>
@@ -71,14 +81,7 @@ export default function PlatformJobs() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 border-t border-gray-200">
-              {jobs.length === 0 ? (
-                <tr>
-                  <td colSpan="6" className="px-6 py-10 text-center text-gray-400">
-                    No jobs posted on the platform yet.
-                  </td>
-                </tr>
-              ) : (
-                jobs.map((job) => (
+              {jobs.map((job) => (
                   <tr key={job.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
@@ -130,9 +133,10 @@ export default function PlatformJobs() {
                     </td>
                   </tr>
                 ))
-              )}
+              }
             </tbody>
           </table>
+          )}
         </div>
       )}
     </div>

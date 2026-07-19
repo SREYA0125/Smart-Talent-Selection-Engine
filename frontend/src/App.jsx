@@ -3,6 +3,7 @@ import MainLayout from "./components/layout/MainLayout.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
 import AdminLayout from "./components/layout/AdminLayout.jsx";
 import RoleProtectedRoute from "./components/RoleProtectedRoute.jsx";
+import { ToastProvider } from "./contexts/ToastContext.jsx";
 
 import Login from "./pages/auth/Login.jsx";
 import Register from "./pages/auth/Register.jsx";
@@ -38,11 +39,12 @@ function HomeRedirect() {
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/" element={<HomeRedirect />} />
+    <ToastProvider>
+      <Routes>
+        <Route path="/" element={<HomeRedirect />} />
 
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
 
       {/* Recruiter Routes */}
       <Route
@@ -137,6 +139,7 @@ export default function App() {
           </RoleProtectedRoute>
         }
       />
-    </Routes>
+      </Routes>
+    </ToastProvider>
   );
 }

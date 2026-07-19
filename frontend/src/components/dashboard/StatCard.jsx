@@ -1,3 +1,5 @@
+import React from "react";
+
 /*
 |--------------------------------------------------------------------------
 | StatCard
@@ -9,7 +11,7 @@
 |--------------------------------------------------------------------------
 */
 
-export default function StatCard({
+function StatCard({
   title,
   value,
   icon,
@@ -41,3 +43,5 @@ export default function StatCard({
     </div>
   );
 }
+
+export default React.memo(StatCard);

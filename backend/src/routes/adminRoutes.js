@@ -7,6 +7,7 @@ import {
   deleteRecruiter,
   getJobs,
   getPlatformAnalytics,
+  exportRecruiters,
 } from "../controllers/adminController.js";
 import { protect } from "../middleware/authMiddleware.js";
 import { authorize } from "../middleware/authorize.js";
@@ -31,6 +32,7 @@ router.get("/dashboard/stats", getDashboardStats);
 router.get("/dashboard/analytics", getPlatformAnalytics);
 
 router.get("/recruiters", getRecruiters);
+router.get("/recruiters/export", exportRecruiters);
 router.post("/recruiters", createRecruiter);
 router.put("/recruiters/:id", updateRecruiter);
 router.delete("/recruiters/:id", deleteRecruiter);

@@ -1,5 +1,6 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth.js";
+import { useToast } from "../../contexts/ToastContext.jsx";
 
 /*
 |--------------------------------------------------------------------------
@@ -20,9 +21,11 @@ const NAV_ITEMS = [
 export default function AdminSidebar() {
   const { logout } = useAuth();
   const navigate = useNavigate();
+  const { showToast } = useToast();
 
   const handleLogout = () => {
     logout();
+    showToast("Logout successful!", "success");
     navigate("/login");
   };
 
