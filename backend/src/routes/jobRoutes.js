@@ -1,3 +1,6 @@
+import { authorize } from "../middleware/authorize.js";
+import { ROLES } from "../constants/roles.js";
+
 import express from "express";
 import {
   createJob,
@@ -15,10 +18,14 @@ const router = express.Router();
 // with no exceptions, so there's no risk of forgetting it on a new route.
 router.use(protect);
 
-router.post("/", createJob);
-router.get("/", getJobs);
-router.get("/:id", getJobById);
-router.patch("/:id", updateJob);
-router.delete("/:id", deleteJob);
+router.get("/", authorize(ROLES.ADMIN, ROLES.RECRUITER), getJobs);
+
+router.get("/:id", authorize(ROLES.ADMIN, ROLES.RECRUITER), getJobById);
+
+router.post("/", authorize(ROLES.RECRUITER), createJob);
+
+router.patch("/:id", authorize(ROLES.RECRUITER), updateJob);
+
+router.delete("/:id", authorize(ROLES.RECRUITER), deleteJob);
 
 export default router;

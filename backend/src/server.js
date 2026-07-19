@@ -10,6 +10,7 @@ import resumeRoutes from "./routes/resumeRoutes.js";
 import analysisRoutes from "./routes/analysisRoutes.js";
 import rankingRoutes from "./routes/rankingRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
+import adminRoutes from "./routes/adminRoutes.js";
 
 // Loads variables from backend/.env into process.env. Called before
 // anything else references process.env (PORT, DATABASE_URL, CLIENT_URL).
@@ -42,6 +43,7 @@ app.use("/api/resumes", resumeRoutes);
 app.use("/api/analysis", analysisRoutes);
 app.use("/api/ranking", rankingRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/admin", adminRoutes);
 
 const PORT = process.env.PORT || 5000;
 
